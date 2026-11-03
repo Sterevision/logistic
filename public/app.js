@@ -5,7 +5,14 @@ const TYPE = { bad_road: ['🕳️', 'Плохая дорога'], weigh_post: [
 const MAX_KM = 600;
 const DEFAULT_CENTER = { lat: 54.74, lng: 55.97 }; // если склад ещё не задан
 
-let sb, session, clients = [], hazards = [], depot = null, lastResult = null, pendingHazard = null, newPoint = null;
+let sb, session, clients = [], hazards = [], trips = [], depot = null, lastResult = null, pendingHazard = null, newPoint = null;
+let isDispatcher = false, editingId = null;
+
+function tomorrow() {
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const fmtDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
 let map, mapLayer, mapH, mapHLayer, pendingMarker, installEvent;
 
 function km(a, b) {
@@ -35,9 +42,10 @@ $('btn-install').onclick = async () => { if (!installEvent) return; installEvent
 })();
 
 function show(view) {
-  for (const v of ['login', 'plan', 'clients', 'hazards']) $('view-' + v).classList.toggle('hidden', v !== view);
+  for (const v of ['login', 'plan', 'trips', 'clients', 'hazards']) $('view-' + v).classList.toggle('hidden', v !== view);
   document.querySelectorAll('nav [data-v]').forEach((b) => b.classList.toggle('active', b.dataset.v === view));
   if (view === 'hazards') initHazardMap();
+  if (view === 'trips') loadTrips();
   window.scrollTo(0, 0);
 }
 
@@ -46,9 +54,18 @@ async function render() {
   $('nav').classList.toggle('hidden', !logged);
   $('btn-logout').classList.toggle('hidden', !logged);
   if (!logged) return show('login');
+  $('trip-date').value = tomorrow();
+  await loadRole();
   show('plan');
   showDepot();
   await Promise.all([loadClients(), loadHazards()]);
+}
+
+async function loadRole() {
+  const { data } = await sb.from('profiles').select('role').eq('id', session.user.id).maybeSingle();
+  isDispatcher = data?.role === 'dispatcher';
+  $('client-form').classList.toggle('hidden', !isDispatcher);
+  $('c-nodisp').classList.toggle('hidden', isDispatcher);
 }
 
 function showDepot() {
@@ -158,7 +175,7 @@ async function loadClients() {
     : 'Клиентов пока нет — добавьте на вкладке «Клиенты».';
   $('clients-list').innerHTML = clients.length ? clients.map((c) => { const s = clientStatus(c);
     return `<div class="stop"><span class="grow"><b>${esc(c.name)}</b> <span class="muted">${esc(c.kind)}</span><br><span class="muted">${esc(c.address)}</span>${s.ok ? '' : `<br><span class="bad">⚠️ ${s.text}</span>`}</span>
-      <button class="ghost small" data-fix="${c.id}">📍 Точка</button></div>`; }).join('') : '<span class="muted">Пока никого</span>';
+      ${isDispatcher ? `<span style="display:flex;gap:6px"><button class="ghost small" data-fix="${c.id}">📍</button><button class="ghost small" data-edit="${c.id}">✏️</button><button class="ghost small bad" data-del="${c.id}">🗑</button></span>` : ''}</div>`; }).join('') : '<span class="muted">Пока никого</span>';
   document.querySelectorAll('[data-fix]').forEach((b) => (b.onclick = () => {
     const c = clients.find((x) => x.id === b.dataset.fix);
     pickPoint(c.lat != null && (!depot || km(depot, c) <= MAX_KM) ? { lat: c.lat, lng: c.lng } : null, async (ll) => {
@@ -168,6 +185,43 @@ async function loadClients() {
     });
   }));
 }
+function resetClientForm() {
+  editingId = null; newPoint = null; foundCands = [];
+  $('c-name').value = ''; $('c-addr').value = ''; $('c-unload').value = 15;
+  $('c-coords').textContent = ''; $('c-candidates').classList.add('hidden');
+  $('c-title').textContent = 'Новый клиент';
+  $('btn-add-client').textContent = 'Добавить клиента';
+  $('btn-cancel-edit').classList.add('hidden');
+}
+$('btn-cancel-edit').onclick = () => { resetClientForm(); $('c-msg').textContent = ''; };
+
+// правка и удаление клиентов (кнопки ✏️ и 🗑 видит только диспетчер)
+$('clients-list').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.edit) {
+    const c = clients.find((x) => x.id === b.dataset.edit);
+    editingId = c.id;
+    newPoint = c.lat != null ? { lat: c.lat, lng: c.lng } : null;
+    $('c-name').value = c.name; $('c-kind').value = c.kind; $('c-addr').value = c.address; $('c-unload').value = c.unload_minutes ?? 15;
+    $('c-title').textContent = 'Редактирование клиента';
+    $('btn-add-client').textContent = 'Сохранить изменения';
+    $('btn-cancel-edit').classList.remove('hidden');
+    $('c-candidates').classList.add('hidden');
+    $('c-msg').textContent = 'Чтобы изменить место, нажмите «Найти адрес» или «Указать на карте».';
+    showNewPoint();
+    $('client-form').scrollIntoView({ behavior: 'smooth' });
+  }
+  if (b.dataset.del) {
+    const c = clients.find((x) => x.id === b.dataset.del);
+    if (!confirm(`Удалить клиента «${c.name}»? Уже сохранённые рейсы останутся.`)) return;
+    const { error } = await sb.from('clients').delete().eq('id', c.id);
+    $('c-msg').textContent = error ? 'Ошибка: ' + error.message : 'Клиент удалён';
+    if (editingId === c.id) resetClientForm();
+    loadClients();
+  }
+});
+
 $('btn-all').onclick = () => document.querySelectorAll('#client-checks input:not(:disabled)').forEach((i) => (i.checked = true));
 $('btn-none').onclick = () => document.querySelectorAll('#client-checks input').forEach((i) => (i.checked = false));
 
@@ -193,12 +247,14 @@ $('btn-add-client').onclick = async () => {
   if (!$('c-name').value || !$('c-addr').value) return ($('c-msg').textContent = 'Заполните название и адрес');
   if (!newPoint) return ($('c-msg').textContent = 'Нужна точка: нажмите «Найти адрес» или «Указать на карте»');
   if (depot && km(depot, newPoint) > MAX_KM) return ($('c-msg').textContent = 'Точка слишком далеко от склада. Проверьте её на карте.');
-  const { error } = await sb.from('clients').insert({
+  const row = {
     name: $('c-name').value, kind: $('c-kind').value, address: $('c-addr').value,
     unload_minutes: Number($('c-unload').value) || 15, lat: newPoint.lat, lng: newPoint.lng,
-  });
-  $('c-msg').textContent = error ? 'Ошибка: ' + error.message + ' (добавлять клиентов может диспетчер)' : 'Клиент добавлен';
-  if (!error) { $('c-name').value = ''; $('c-addr').value = ''; foundCands = []; newPoint = null; $('c-coords').textContent = ''; $('c-candidates').classList.add('hidden'); loadClients(); }
+  };
+  const wasEdit = !!editingId;
+  const { error } = wasEdit ? await sb.from('clients').update(row).eq('id', editingId) : await sb.from('clients').insert(row);
+  $('c-msg').textContent = error ? 'Ошибка: ' + error.message + ' (менять клиентов может диспетчер)' : wasEdit ? 'Изменения сохранены' : 'Клиент добавлен';
+  if (!error) { resetClientForm(); $('c-msg').textContent = wasEdit ? 'Изменения сохранены' : 'Клиент добавлен'; loadClients(); }
 };
 
 // ---------- опасные точки ----------
@@ -280,8 +336,11 @@ $('btn-optimize').onclick = async () => {
   $('btn-optimize').disabled = false;
 };
 
-function showResult(d) {
+function showResult(d, dep = depot, back = $('ret').value === '1', savedNote = '') {
   $('result').classList.remove('hidden');
+  $('saved-note').classList.toggle('hidden', !savedNote);
+  $('saved-note').textContent = savedNote;
+  $('save-box').classList.toggle('hidden', !!savedNote);
   const R = d.route;
   $('summary').innerHTML = `<div class="summary-big">${R.distance_km} км · ${Math.floor(R.duration_min / 60)} ч ${R.duration_min % 60} мин</div>
     <div class="muted">≈ ${R.cost_rub} ₽ · платные дороги: ${R.tolls === 'allowed' ? 'используются' : 'объезжаются'}${R.alternative_cost_rub ? ` (другой вариант ${R.alternative_cost_rub} ₽)` : ''}<br>Время разгрузки не включено.</div>`;
@@ -289,8 +348,7 @@ function showResult(d) {
     ? '<h2 class="warn">На маршруте</h2>' + d.warnings.map((w) => `<div class="stop"><span style="font-size:22px">${TYPE[w.type][0]}</span><span>${esc(w.title)}<br><span class="muted">${TYPE[w.type][1]}${w.toll_price_rub ? ', ' + w.toll_price_rub + ' ₽' : ''}</span></span></div>`).join('')
     : '<span class="ok">✓ Известных весовых постов, плохих дорог и платных участков на маршруте нет</span>';
   $('ordered').innerHTML = '<h2>Порядок объезда</h2>' + d.stops.map((s) => `<div class="stop"><span class="num">${s.seq}</span><span class="grow">${esc(s.name)}</span></div>`).join('');
-  const back = $('ret').value === '1';
-  const pts = [depot, ...d.stops, ...(back ? [depot] : [])];
+  const pts = [dep, ...d.stops.filter((s) => s.lat != null), ...(back ? [dep] : [])];
   $('yandex').href = 'https://yandex.ru/maps/?rtt=auto&rtext=' + pts.map((p) => `${p.lat},${p.lng}`).join('~');
 
   if (!map) {
@@ -299,19 +357,68 @@ function showResult(d) {
     mapLayer = L.layerGroup().addTo(map);
   }
   mapLayer.clearLayers();
-  const line = L.polyline(R.geometry.map(([lng, lat]) => [lat, lng]), { weight: 5 }).addTo(mapLayer);
-  L.marker([depot.lat, depot.lng]).bindPopup('Склад').addTo(mapLayer);
-  d.stops.forEach((s) => L.marker([s.lat, s.lng], { icon: L.divIcon({ className: '', html: `<div class="num">${s.seq}</div>`, iconSize: [34, 34] }) }).addTo(mapLayer));
+  const line = L.polyline(R.geometry ? R.geometry.map(([lng, lat]) => [lat, lng]) : pts.map((p) => [p.lat, p.lng]), { weight: 5 }).addTo(mapLayer);
+  L.marker([dep.lat, dep.lng]).bindPopup('Склад').addTo(mapLayer);
+  d.stops.filter((s) => s.lat != null).forEach((s) => L.marker([s.lat, s.lng], { icon: L.divIcon({ className: '', html: `<div class="num">${s.seq}</div>`, iconSize: [34, 34] }) }).addTo(mapLayer));
   d.warnings.forEach((w) => L.marker([w.lat, w.lng]).bindPopup(`${TYPE[w.type][0]} ${esc(w.title)}`).addTo(mapLayer));
   map.fitBounds(line.getBounds(), { padding: [20, 20] });
   setTimeout(() => map.invalidateSize(), 50);
   $('result').scrollIntoView({ behavior: 'smooth' });
 }
 
+// ---------- сохранённые рейсы ----------
 $('btn-save').onclick = async () => {
   if (!lastResult) return;
-  const { data, error } = await sb.from('trip_plans').insert({ depot, settings: settings(), result: { route: { ...lastResult.route, geometry: undefined }, warnings: lastResult.warnings } }).select().single();
-  if (error) return ($('plan-msg').textContent = 'Ошибка сохранения: ' + error.message);
-  await sb.from('trip_stops').insert(lastResult.stops.map((s) => ({ plan_id: data.id, client_id: s.id, seq: s.seq })));
-  $('plan-msg').textContent = 'Рейс сохранён';
+  $('btn-save').disabled = true;
+  const round = (v) => Math.round(v * 1e5) / 1e5;
+  const route = { ...lastResult.route, geometry: (lastResult.route.geometry || []).map(([x, y]) => [round(x), round(y)]) };
+  const { data, error } = await sb.from('trip_plans')
+    .insert({ plan_date: $('trip-date').value || tomorrow(), depot, settings: settings(), result: { route, warnings: lastResult.warnings } })
+    .select().single();
+  if (error) { $('btn-save').disabled = false; return ($('plan-msg').textContent = 'Ошибка сохранения: ' + error.message); }
+  const rows = lastResult.stops.map((s) => {
+    const c = clients.find((x) => x.id === s.id);
+    return { plan_id: data.id, client_id: s.id, seq: s.seq, name: s.name, address: c?.address ?? null, lat: s.lat, lng: s.lng };
+  });
+  const { error: e2 } = await sb.from('trip_stops').insert(rows);
+  $('btn-save').disabled = false;
+  if (e2) { await sb.from('trip_plans').delete().eq('id', data.id); return ($('plan-msg').textContent = 'Ошибка сохранения точек: ' + e2.message + ' (выполнили migration_2.sql?)'); }
+  $('plan-msg').textContent = 'Рейс сохранён — он во вкладке «Рейсы»';
 };
+
+async function loadTrips() {
+  const { data, error } = await sb.from('trip_plans')
+    .select('id, plan_date, driver_id, depot, settings, result, trip_stops(count)')
+    .order('plan_date', { ascending: false }).order('created_at', { ascending: false }).limit(50);
+  if (error) { $('trips-list').textContent = error.message; return; }
+  trips = data;
+  $('trips-list').innerHTML = trips.length ? trips.map((t) => {
+    const r = t.result?.route || {};
+    const mins = r.duration_min ? `${Math.floor(r.duration_min / 60)} ч ${r.duration_min % 60} мин` : '';
+    const n = t.trip_stops?.[0]?.count;
+    return `<div class="stop"><span class="grow"><b>${fmtDate(t.plan_date)}</b>${t.driver_id === session.user.id ? '' : ' <span class="muted">· другой водитель</span>'}<br>
+      <span class="muted">${n != null ? n + ' точек · ' : ''}${r.distance_km ?? '?'} км${mins ? ' · ' + mins : ''}</span></span>
+      <span style="display:flex;gap:6px"><button class="ghost small" data-open="${t.id}">Открыть</button><button class="ghost small bad" data-trip-del="${t.id}">🗑</button></span></div>`;
+  }).join('') : 'Пока нет сохранённых рейсов. Постройте маршрут и нажмите «Сохранить рейс».';
+}
+
+$('trips-list').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.tripDel) {
+    if (!confirm('Удалить этот рейс?')) return;
+    const { error } = await sb.from('trip_plans').delete().eq('id', b.dataset.tripDel);
+    if (error) $('trips-list').insertAdjacentHTML('afterbegin', `<p class="bad">Ошибка: ${esc(error.message)}</p>`); else loadTrips();
+  }
+  if (b.dataset.open) {
+    const t = trips.find((x) => x.id === b.dataset.open);
+    const { data: rows, error } = await sb.from('trip_stops').select('*').eq('plan_id', t.id).order('seq');
+    if (error) return ($('trips-list').insertAdjacentHTML('afterbegin', `<p class="bad">Ошибка: ${esc(error.message)}</p>`));
+    const stops = rows.map((s) => {
+      const c = clients.find((x) => x.id === s.client_id);
+      return { seq: s.seq, id: s.client_id, name: s.name ?? c?.name ?? 'Клиент удалён', lat: s.lat ?? c?.lat ?? null, lng: s.lng ?? c?.lng ?? null };
+    });
+    show('plan');
+    showResult({ stops, route: t.result.route, warnings: t.result.warnings || [] }, t.depot, t.settings?.returnToDepot !== false, `Сохранённый рейс на ${fmtDate(t.plan_date)}`);
+  }
+});

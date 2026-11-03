@@ -72,8 +72,12 @@ create table if not exists trip_plans (
 
 create table if not exists trip_stops (
   plan_id uuid references trip_plans on delete cascade,
-  client_id uuid references clients,
+  client_id uuid references clients on delete set null,
   seq int not null,
+  name text,       -- снимок клиента на момент рейса
+  address text,
+  lat double precision,
+  lng double precision,
   done_at timestamptz,
   primary key (plan_id, seq)
 );
