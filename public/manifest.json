@@ -2,10 +2,14 @@
   "name": "Маршрут на завтра",
   "short_name": "Маршрут",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0f1115",
+  "orientation": "portrait",
+  "background_color": "#1f6feb",
   "theme_color": "#1f6feb",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
   ]
 }

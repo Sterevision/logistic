@@ -10,19 +10,21 @@ create table if not exists profiles (
   created_at timestamptz default now()
 );
 
-create or replace function handle_new_user() returns trigger as $$
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
 begin
-  insert into profiles (id, full_name) values (new.id, new.raw_user_meta_data->>'full_name');
+  insert into public.profiles (id, full_name) values (new.id, new.raw_user_meta_data->>'full_name');
   return new;
-end; $$ language plpgsql security definer;
+end; $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function handle_new_user();
 
-create or replace function is_dispatcher() returns boolean as $$
-  select exists (select 1 from profiles where id = auth.uid() and role = 'dispatcher');
-$$ language sql stable security definer;
+create or replace function public.is_dispatcher() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role = 'dispatcher');
+$$;
 
 -- Клиенты (ООО и ИП)
 create table if not exists clients (
@@ -100,9 +102,10 @@ create policy "stops: через свой план" on trip_stops for all to aut
   with check (exists (select 1 from trip_plans p where p.id = plan_id and (p.driver_id = auth.uid() or is_dispatcher())));
 
 -- Подтверждение опасной точки другим водителем (+1)
-create or replace function confirm_hazard(hid uuid) returns void as $$
-  update hazards set confirmations = confirmations + 1 where id = hid;
-$$ language sql security definer;
+create or replace function public.confirm_hazard(hid uuid) returns void
+language sql security definer set search_path = public as $$
+  update public.hazards set confirmations = confirmations + 1 where id = hid;
+$$;
 
 -- Первого диспетчера назначьте вручную:
 -- update profiles set role = 'dispatcher' where id = '<uuid вашего пользователя>';

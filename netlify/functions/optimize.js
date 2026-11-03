@@ -3,7 +3,8 @@
 //   returnToDepot, vehicle:{weightKg,heightM}, avoidTolls:'auto'|'always'|'never',
 //   valueOfHourRub, costPerKmRub } }
 // header: Authorization: Bearer <supabase access token>
-const { solve } = require('./lib/solver');
+const { solve, haversine } = require('./lib/solver');
+const MAX_KM_FROM_DEPOT = 600; // дальше — почти наверняка неверные координаты
 
 const ORS = 'https://api.openrouteservice.org';
 const PROFILE = 'driving-hgv';
@@ -83,6 +84,11 @@ exports.handler = async (event) => {
     const { depot, stops, settings = {} } = JSON.parse(event.body || '{}');
     if (!depot || !Array.isArray(stops) || stops.length < 1) return json(400, { error: 'Нужны склад и хотя бы одна точка' });
     if (stops.length > 45) return json(400, { error: 'Максимум 45 точек за раз (лимит API маршрутизации)' });
+
+    const far = stops.filter((s) => s.lat == null || s.lng == null || haversine(depot, s) / 1000 > MAX_KM_FROM_DEPOT);
+    if (far.length) {
+      return json(400, { error: `Проверьте точку на карте у: ${far.map((s) => s.name).join(', ')}. Она слишком далеко от склада (больше ${MAX_KM_FROM_DEPOT} км) или без координат.` });
+    }
 
     const valueOfHour = settings.valueOfHourRub ?? 600; // сколько стоит час водителя+машины
     const perKm = settings.costPerKmRub ?? 18; // топливо + износ
