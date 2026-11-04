@@ -38,6 +38,7 @@ create table if not exists clients (
   unload_minutes int default 15,
   work_from time,
   work_to time,
+  phone text,
   notes text,
   created_at timestamptz default now()
 );
@@ -67,6 +68,8 @@ create table if not exists trip_plans (
   settings jsonb,
   result jsonb,
   status text not null default 'planned' check (status in ('planned','in_progress','done')),
+  started_at timestamptz,
+  finished_at timestamptz,
   created_at timestamptz default now()
 );
 
@@ -78,6 +81,14 @@ create table if not exists trip_stops (
   address text,
   lat double precision,
   lng double precision,
+  phone text,
+  work_from time,
+  work_to time,
+  unload_min int,
+  eta_min int,     -- плановое прибытие, минут от полуночи
+  wait_min int,
+  late_min int,
+  skipped_at timestamptz,
   done_at timestamptz,
   primary key (plan_id, seq)
 );
@@ -98,6 +109,7 @@ create policy "hazards: читают все вошедшие"   on hazards for s
 create policy "hazards: добавляет любой водитель" on hazards for insert to authenticated with check (created_by = auth.uid());
 create policy "hazards: правит автор или диспетчер" on hazards for update to authenticated using (created_by = auth.uid() or is_dispatcher());
 create policy "hazards: удаляет диспетчер"     on hazards for delete to authenticated using (is_dispatcher());
+create policy "hazards: автор удаляет своё"    on hazards for delete to authenticated using (created_by = auth.uid());
 
 create policy "plans: свои или диспетчер" on trip_plans for all to authenticated
   using (driver_id = auth.uid() or is_dispatcher()) with check (driver_id = auth.uid() or is_dispatcher());

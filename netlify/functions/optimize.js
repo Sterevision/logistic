@@ -1,11 +1,15 @@
 // POST /api/optimize
-// body: { depot:{lat,lng,name}, stops:[{id,name,lat,lng}], settings:{
-//   returnToDepot, vehicle:{weightKg,heightM}, avoidTolls:'auto'|'always'|'never',
-//   valueOfHourRub, costPerKmRub } }
+// body: {
+//   depot:{lat,lng,name},
+//   stops:[{id,name,lat,lng,from,to,unload}],   from/to — окно приёмки в минутах от полуночи (или null), unload — минут
+//   settings:{ returnToDepot, vehicle:{weightKg,heightM}, avoidTolls:'auto'|'always'|'never',
+//              valueOfHourRub, costPerKmRub, startMin, reservePct },
+//   mode: 'auto' | 'manual',  order: [id,...]   (для ручного порядка)
+// }
 // header: Authorization: Bearer <supabase access token>
-const { solve, haversine } = require('./lib/solver');
-const MAX_KM_FROM_DEPOT = 600; // дальше — почти наверняка неверные координаты
+const { solve, solveWindows, haversine } = require('./lib/solver');
 
+const MAX_KM_FROM_DEPOT = 600; // дальше — почти наверняка неверные координаты
 const ORS = 'https://api.openrouteservice.org';
 const PROFILE = 'driving-hgv';
 
@@ -72,7 +76,12 @@ async function route(points, { avoidTolls, avoidPolys, vehicle }) {
     options,
   });
   const f = data.features[0];
-  return { coords: f.geometry.coordinates, distance: f.properties.summary.distance, duration: f.properties.summary.duration };
+  return {
+    coords: f.geometry.coordinates,
+    distance: f.properties.summary.distance,
+    duration: f.properties.summary.duration,
+    legs: (f.properties.segments || []).map((s) => s.duration),
+  };
 }
 
 exports.handler = async (event) => {
@@ -81,7 +90,7 @@ exports.handler = async (event) => {
     const token = (event.headers.authorization || '').replace(/^Bearer /i, '');
     if (!token) return json(401, { error: 'Нужен вход в приложение' });
 
-    const { depot, stops, settings = {} } = JSON.parse(event.body || '{}');
+    const { depot, stops, settings = {}, mode = 'auto', order: manualIds } = JSON.parse(event.body || '{}');
     if (!depot || !Array.isArray(stops) || stops.length < 1) return json(400, { error: 'Нужны склад и хотя бы одна точка' });
     if (stops.length > 45) return json(400, { error: 'Максимум 45 точек за раз (лимит API маршрутизации)' });
 
@@ -94,12 +103,15 @@ exports.handler = async (event) => {
     const perKm = settings.costPerKmRub ?? 18; // топливо + износ
     const returnToDepot = settings.returnToDepot !== false;
     const vehicle = settings.vehicle || {};
+    const startMin = Number.isFinite(settings.startMin) ? settings.startMin : 8 * 60;
+    const reserve = 1 + Math.max(0, Math.min(100, Number(settings.reservePct ?? 15))) / 100; // запас на пробки и грузовой темп
 
     const hazards = await loadHazards(token);
     const badRoads = hazards.filter((h) => h.type === 'bad_road');
     const avoidPolys = badRoads.map((h) => box(h.lat, h.lng, Math.max(h.radius_m || 150, 100)));
 
     const points = [depot, ...stops];
+    const n = points.length;
 
     // 1) матрица время/расстояние для грузового профиля
     const m = await ors(`/v2/matrix/${PROFILE}`, {
@@ -107,18 +119,33 @@ exports.handler = async (event) => {
       metrics: ['duration', 'distance'],
       units: 'm',
     });
-    const n = points.length;
+    const dur = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 0 : m.durations[i][j] == null ? 1e7 : m.durations[i][j] * reserve)));
     const cost = Array.from({ length: n }, (_, i) =>
       Array.from({ length: n }, (_, j) => {
         if (i === j) return 0;
-        const sec = m.durations[i][j], meters = m.distances[i][j];
-        if (sec == null || meters == null) return 1e9; // нет проезда для этой машины
-        return (sec / 3600) * valueOfHour + (meters / 1000) * perKm;
+        if (m.durations[i][j] == null || m.distances[i][j] == null) return 1e9; // нет проезда для этой машины
+        return (dur[i][j] / 3600) * valueOfHour + (m.distances[i][j] / 1000) * perKm;
       })
     );
 
-    // 2) оптимальный порядок
-    const { order } = solve(cost, { returnToDepot });
+    const service = points.map((p, i) => (i === 0 ? 0 : (Number(p.unload) || 15) * 60));
+    const from = points.map((p, i) => (i === 0 || p.from == null ? null : p.from * 60));
+    const to = points.map((p, i) => (i === 0 || p.to == null ? null : p.to * 60));
+    const hasWindows = from.some((v) => v != null) || to.some((v) => v != null);
+
+    // 2) порядок объезда: ручной, с окнами или самый дешёвый
+    let order;
+    if (mode === 'manual' && Array.isArray(manualIds)) {
+      const byId = new Map(stops.map((s, i) => [s.id, i + 1]));
+      order = [0, ...manualIds.map((id) => byId.get(id))];
+      if (order.length !== n || new Set(order).size !== n || order.includes(undefined)) {
+        return json(400, { error: 'Ручной порядок не совпадает со списком клиентов. Построите маршрут заново.' });
+      }
+    } else if (hasWindows) {
+      order = solveWindows({ cost, dur, service, from, to, startSec: startMin * 60, returnToDepot, valueOfHour }).order;
+    } else {
+      order = solve(cost, { returnToDepot }).order;
+    }
     const ordered = order.map((i) => points[i]);
     const wayPoints = returnToDepot ? [...ordered, depot] : ordered;
 
@@ -129,7 +156,7 @@ exports.handler = async (event) => {
 
     const tollHazards = hazards.filter((h) => h.type === 'toll');
     const score = (v, usesTolls) => {
-      let c = (v.duration / 3600) * valueOfHour + (v.distance / 1000) * perKm;
+      let c = ((v.duration * reserve) / 3600) * valueOfHour + (v.distance / 1000) * perKm;
       if (usesTolls) c += hazardsOnRoute(v.coords, tollHazards).reduce((s, h) => s + (Number(h.toll_price_rub) || 0), 0);
       return c;
     };
@@ -146,24 +173,50 @@ exports.handler = async (event) => {
       chosen.costRub = Math.round(score(chosen, chosenKey === 'withTolls'));
     }
 
-    // 4) предупреждения вдоль выбранного маршрута
+    // 4) расписание по участкам выбранного маршрута
+    const legs = chosen.legs.length === wayPoints.length - 1
+      ? chosen.legs.map((s) => s * reserve)
+      : wayPoints.slice(1).map((_, k) => dur[order[k]][order[(k + 1) % n]]);
+    let t = startMin * 60;
+    const stopsOut = [];
+    for (let k = 1; k < order.length; k++) {
+      const idx = order[k];
+      t += legs[k - 1];
+      const arrive = t;
+      const wait = from[idx] != null && t < from[idx] ? from[idx] - t : 0;
+      t += wait;
+      const late = to[idx] != null && t > to[idx] ? t - to[idx] : 0;
+      const p = points[idx];
+      stopsOut.push({
+        seq: k, id: p.id, name: p.name, lat: p.lat, lng: p.lng,
+        from: p.from ?? null, to: p.to ?? null, unload: Number(p.unload) || 15,
+        arrive_min: Math.round(arrive / 60), wait_min: Math.round(wait / 60), late_min: Math.round(late / 60),
+      });
+      t += service[idx];
+    }
+    const finishSec = returnToDepot ? t + legs[legs.length - 1] : t;
+
+    // 5) предупреждения вдоль выбранного маршрута
     const warn = hazardsOnRoute(chosen.coords, hazards).map((h) => ({
       id: h.id, type: h.type, title: h.title, lat: h.lat, lng: h.lng, toll_price_rub: h.toll_price_rub,
     }));
 
     return json(200, {
-      order: order.slice(1).map((i) => stops[i - 1].id), // id клиентов по порядку
-      stops: ordered.slice(1).map((p, k) => ({ seq: k + 1, id: p.id, name: p.name, lat: p.lat, lng: p.lng })),
+      order: stopsOut.map((s) => s.id),
+      stops: stopsOut,
       route: {
         geometry: chosen.coords,
         distance_km: Math.round(chosen.distance / 100) / 10,
-        duration_min: Math.round(chosen.duration / 60),
+        duration_min: Math.round((chosen.duration * reserve) / 60),
+        depart_min: startMin,
+        finish_min: Math.round(finishSec / 60),
         cost_rub: chosen.costRub,
         alternative_cost_rub: chosen.alternativeCostRub ?? null,
         tolls: chosenKey === 'withTolls' ? 'allowed' : 'avoided',
+        return_to_depot: returnToDepot,
+        late_count: stopsOut.filter((s) => s.late_min > 0).length,
       },
       warnings: warn,
-      note: 'Порядок рассчитан по времени и км грузового профиля; плохие дороги обходятся, весовые посты и платные участки — показаны как предупреждения.',
     });
   } catch (e) {
     return json(500, { error: e.message });

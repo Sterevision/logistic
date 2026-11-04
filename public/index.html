@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#1f6feb">
+<meta name="theme-color" content="#0B4FC4">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -11,192 +11,210 @@
 <link rel="icon" href="/icon.svg">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <title>Маршрут</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@500;600;700&family=Golos+Text:wght@400;500;600;700&display=swap&subset=cyrillic">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-  :root { --bg:#f2f4f7; --card:#fff; --text:#101828; --muted:#667085; --accent:#1f6feb; --bad:#d92d20; --warn:#b54708; --ok:#067647; --line:#e4e7ec; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0c0e12; --card:#171a21; --text:#eef0f3; --muted:#98a2b3; --line:#2a2f3a; } }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html, body { margin:0; overscroll-behavior:none; }
-  body { font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text);
-         padding-bottom:calc(76px + env(safe-area-inset-bottom)); -webkit-user-select:none; user-select:none; }
-  input, select { -webkit-user-select:text; user-select:text; }
-  header { position:sticky; top:0; z-index:500; background:var(--accent); color:#fff; padding:calc(12px + env(safe-area-inset-top)) 16px 12px;
-           display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  header b { font-size:18px; }
-  header button { width:auto; padding:6px 12px; background:rgba(255,255,255,.2); border-radius:18px; font-size:14px; }
-  main { padding:12px 16px; max-width:720px; margin:auto; }
-  h2 { font-size:15px; margin:0 0 8px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.03em; }
-  .card { background:var(--card); border-radius:16px; padding:14px; margin-bottom:12px; box-shadow:0 1px 2px rgba(16,24,40,.06); }
-  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
-  input, select, button { font:inherit; min-height:48px; padding:10px 14px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); width:100%; }
-  button { background:var(--accent); color:#fff; border:0; font-weight:600; cursor:pointer; transition:transform .08s; }
-  button:active { transform:scale(.97); }
-  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
-  button.big { min-height:56px; font-size:18px; border-radius:16px; }
-  button.small { min-height:36px; padding:4px 12px; width:auto; font-size:14px; }
-  button:disabled { opacity:.45; }
-  .row { display:flex; gap:8px; } .row > * { flex:1; min-width:0; }
-  #map { height:300px; border-radius:16px; margin-bottom:12px; }
-  nav { position:fixed; bottom:0; left:0; right:0; z-index:600; display:flex; background:var(--card); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
-  nav button { background:none; color:var(--muted); border-radius:0; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:12px; padding:8px 4px; min-height:60px; border:0; }
-  nav button span { font-size:22px; line-height:1; }
-  nav button.active { color:var(--accent); }
-  .stop { display:flex; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
-  .stop:last-child { border:0; }
-  .grow { flex:1; min-width:0; }
-  .num { min-width:34px; height:34px; border-radius:50%; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:700; }
-  .muted { color:var(--muted); font-size:14px; }
-  .warn { color:var(--warn); } .bad { color:var(--bad); } .ok { color:var(--ok); }
-  .hidden { display:none !important; }
-  .chk { display:flex; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); margin:0; color:var(--text); font-size:16px; }
-  .chk:last-child { border:0; }
-  .chk input { width:26px; height:26px; min-height:0; flex:none; }
-  details summary { cursor:pointer; font-weight:600; padding:6px 0; }
-  .summary-big { font-size:22px; font-weight:700; }
-  #pick { position:fixed; inset:0; z-index:1000; background:var(--bg); display:flex; flex-direction:column; }
-  #pick-map { flex:1; }
-  #pick .bar { padding:12px 16px calc(12px + env(safe-area-inset-bottom)); background:var(--card); display:flex; flex-direction:column; gap:8px; }
-</style>
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<header>
-  <b>🚚 Маршрут</b>
-  <span style="display:flex;gap:8px;align-items:center">
-    <button id="btn-install" class="hidden">Установить</button>
-    <button id="btn-logout" class="hidden">Выйти</button>
-  </span>
+
+<header class="bar">
+  <div class="brand"><span class="plate" data-i="truck"></span><span>Маршрут</span></div>
+  <div class="bar-actions">
+    <button id="btn-install" class="btn sm primary hidden">Установить</button>
+    <button id="btn-logout" class="icon-btn hidden" aria-label="Выйти" data-i="logout"></button>
+  </div>
 </header>
 
 <main>
   <!-- ВХОД -->
   <section id="view-login" class="hidden">
+    <h1 class="title">Войти</h1>
     <div class="card">
-      <label>Email</label><input id="email" type="email" autocomplete="username">
-      <label>Пароль</label><input id="password" type="password" autocomplete="current-password">
-      <div class="row" style="margin-top:14px"><button id="btn-login">Войти</button><button id="btn-signup" class="ghost">Регистрация</button></div>
-      <p id="login-msg" class="muted"></p>
+      <div class="field"><label for="email">Почта</label><input id="email" type="email" autocomplete="username" inputmode="email"></div>
+      <div class="field"><label for="password">Пароль</label><input id="password" type="password" autocomplete="current-password"></div>
+      <div class="btn-row"><button id="btn-login" class="btn primary">Войти</button><button id="btn-signup" class="btn ghost">Создать аккаунт</button></div>
+      <p id="login-msg" class="msg"></p>
     </div>
   </section>
 
   <!-- МАРШРУТ -->
   <section id="view-plan" class="hidden">
-    <div class="card">
-      <h2>Склад</h2>
-      <div id="depot-view" class="row" style="align-items:center">
-        <span id="depot-info" class="grow muted"></span>
-        <button id="btn-depot-edit" class="ghost small" style="flex:0 0 auto">Изменить</button>
+    <h1 class="title" id="plan-title">Рейс на завтра</h1>
+
+    <div id="resume" class="note warn hidden"></div>
+
+    <div class="card hero">
+      <div class="row-2">
+        <div class="field"><label for="trip-date">Дата рейса</label><input id="trip-date" type="date"></div>
+        <div class="field"><label for="v-start">Выезд со склада</label><input id="v-start" type="time" value="08:00"></div>
+      </div>
+      <div id="depot-view" class="depot">
+        <span data-i="warehouse"></span>
+        <span id="depot-info" class="grow"></span>
+        <button id="btn-depot-edit" class="btn ghost sm">Изменить</button>
       </div>
       <div id="depot-edit" class="hidden">
-        <input id="depot-text" placeholder="Город, улица, дом склада">
-        <div class="row" style="margin-top:8px"><button id="btn-depot">Найти</button><button id="btn-depot-pick" class="ghost">На карте</button></div>
-        <select id="depot-cands" class="hidden" style="margin-top:8px"></select>
+        <div class="field"><label for="depot-text">Адрес склада, с городом</label><input id="depot-text" placeholder="Уфа, ул. Ленина, 1"></div>
+        <div class="btn-row"><button id="btn-depot" class="btn sign">Найти</button><button id="btn-depot-pick" class="btn ghost">На карте</button></div>
+        <select id="depot-cands" class="hidden" style="margin-top:10px"></select>
       </div>
     </div>
 
-    <div class="card">
-      <h2>Клиенты на завтра</h2>
-      <div class="row" style="margin-bottom:6px"><button id="btn-all" class="ghost small">Выбрать всех</button><button id="btn-none" class="ghost small">Снять все</button></div>
-      <div id="client-checks" class="muted">Загрузка…</div>
+    <div class="section-head">
+      <h2>Клиенты</h2>
+      <span><button id="btn-all" class="link">Выбрать всех</button><button id="btn-none" class="link">Снять</button></span>
     </div>
+    <div id="client-checks" class="list"><div class="skeleton"></div><div class="skeleton"></div></div>
 
-    <div class="card">
-      <details>
-        <summary>Настройки машины и расчёта</summary>
-        <div class="row">
-          <div><label>Масса, кг</label><input id="v-weight" type="number" inputmode="numeric" placeholder="3500"></div>
-          <div><label>Высота, м</label><input id="v-height" type="number" inputmode="decimal" step="0.1" placeholder="2.8"></div>
-        </div>
-        <label>Платные дороги</label>
-        <select id="tolls"><option value="auto">Выбрать выгоднее</option><option value="always">Всегда объезжать</option><option value="never">Разрешены</option></select>
-        <label>Вернуться на склад</label>
-        <select id="ret"><option value="1">Да</option><option value="0">Нет</option></select>
-        <div class="row">
-          <div><label>₽ за час</label><input id="v-hour" type="number" inputmode="numeric" value="600"></div>
-          <div><label>₽ за км</label><input id="v-km" type="number" inputmode="numeric" value="18"></div>
-        </div>
-      </details>
-    </div>
+    <details class="card" style="margin-top:12px">
+      <summary>Машина и расчёт</summary>
+      <div class="row-2">
+        <div class="field"><label for="v-weight">Масса, кг</label><input id="v-weight" type="number" inputmode="numeric" placeholder="3500"></div>
+        <div class="field"><label for="v-height">Высота, м</label><input id="v-height" type="number" inputmode="decimal" step="0.1" placeholder="2.8"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label for="tolls">Платные дороги</label>
+          <select id="tolls"><option value="auto">Где выгоднее</option><option value="always">Объезжать</option><option value="never">Можно</option></select></div>
+        <div class="field"><label for="ret">Вернуться на склад</label>
+          <select id="ret"><option value="1">Да</option><option value="0">Нет</option></select></div>
+      </div>
+      <div class="row-3">
+        <div class="field"><label for="v-hour">₽ за час</label><input id="v-hour" type="number" inputmode="numeric" value="600"></div>
+        <div class="field"><label for="v-km">₽ за км</label><input id="v-km" type="number" inputmode="numeric" value="18"></div>
+        <div class="field"><label for="v-reserve">Запас, %</label><input id="v-reserve" type="number" inputmode="numeric" value="15"></div>
+      </div>
+      <p class="hint" style="margin:0">Запас добавляется ко времени в пути: пробки и темп гружёной машины.</p>
+    </details>
 
-    <button id="btn-optimize" class="big">Построить маршрут</button>
-    <p id="plan-msg" class="muted"></p>
+    <p id="plan-msg" class="msg"></p>
 
-    <div id="result" class="hidden" style="margin-top:12px">
-      <div id="saved-note" class="card hidden"></div>
-      <div class="card"><div id="summary"></div></div>
+    <div id="result" class="hidden">
+      <div id="saved-note" class="note hidden"></div>
+      <div id="tiles" class="tiles"></div>
       <div id="map"></div>
-      <div class="card" id="warnings"></div>
-      <div class="card" id="ordered"></div>
-      <a id="yandex" target="_blank" rel="noopener" style="text-decoration:none"><button class="big" style="margin-bottom:10px">Поехали (Яндекс Карты)</button></a>
-      <div id="save-box" class="card">
-        <label style="margin-top:0">Дата рейса</label><input id="trip-date" type="date">
-        <button id="btn-save" style="margin-top:10px">Сохранить рейс</button>
-      </div>
+      <div id="reorder-note" class="note hidden"></div>
+      <div id="warnings"></div>
+      <div class="section-head" style="margin-top:8px"><h2>Порядок объезда</h2></div>
+      <p class="hint" style="margin-top:0" id="drag-hint">Потяните за ручку справа, чтобы поменять порядок. Время пересчитается.</p>
+      <div id="ordered" class="tl"></div>
+      <a id="yandex" class="btn ghost" target="_blank" rel="noopener" style="margin-top:12px"><span data-i="navigation"></span>Весь маршрут в Яндекс Картах</a>
     </div>
   </section>
 
   <!-- РЕЙСЫ -->
   <section id="view-trips" class="hidden">
-    <div class="card"><h2>Сохранённые рейсы</h2><div id="trips-list" class="muted">Загрузка…</div></div>
+    <h1 class="title">Рейсы</h1>
+    <div id="trips-list" class="list"></div>
   </section>
 
   <!-- КЛИЕНТЫ -->
   <section id="view-clients" class="hidden">
-    <div id="c-nodisp" class="card hidden"><span class="muted">Клиентов добавляет и меняет диспетчер. Вы можете выбирать их в маршруте.</span></div>
-    <div class="card" id="client-form">
-      <h2 id="c-title">Новый клиент</h2>
-      <label>Название</label><input id="c-name" placeholder="ООО «Ромашка» / ИП Иванов">
-      <div class="row">
-        <div><label>Тип</label><select id="c-kind"><option>ООО</option><option>ИП</option></select></div>
-        <div><label>Разгрузка, мин</label><input id="c-unload" type="number" inputmode="numeric" value="15"></div>
-      </div>
-      <label>Адрес (с городом или посёлком)</label>
-      <input id="c-addr" placeholder="Уфа, ул. Ленина, 1">
-      <div class="row" style="margin-top:8px"><button id="btn-find">Найти адрес</button><button id="btn-pick-new" class="ghost">Указать на карте</button></div>
-      <select id="c-candidates" class="hidden" style="margin-top:8px"></select>
-      <div id="c-coords" class="muted" style="margin-top:8px"></div>
-      <button id="btn-add-client" class="big" style="margin-top:12px">Добавить клиента</button>
-      <button id="btn-cancel-edit" class="ghost hidden" style="margin-top:8px">Отменить изменение</button>
-      <p id="c-msg" class="muted"></p>
+    <h1 class="title">Клиенты</h1>
+    <div id="c-nodisp" class="note hidden"><span data-i="users"></span><span class="grow">Клиентов добавляет и меняет диспетчер. Вы выбираете их в маршруте.</span></div>
+    <div class="btn-row" style="margin-bottom:12px">
+      <input id="c-search" type="search" placeholder="Найти по названию или адресу">
+      <button id="btn-new-client" class="btn primary icon hidden" aria-label="Новый клиент" data-i="plus"></button>
     </div>
-    <div class="card"><h2>Все клиенты</h2><div id="clients-list"></div></div>
+    <div id="clients-list" class="list"></div>
   </section>
 
-  <!-- ОПАСНЫЕ ТОЧКИ -->
+  <!-- ДОРОГИ -->
   <section id="view-hazards" class="hidden">
-    <div class="card">
-      <h2>Отметить на карте</h2>
-      <p class="muted" style="margin:0 0 8px">Нажмите на карту в нужном месте.</p>
-      <select id="h-type">
-        <option value="bad_road">🕳️ Плохая дорога (будем объезжать)</option>
-        <option value="weigh_post">⚖️ Весовой контроль</option>
-        <option value="toll">💰 Платный участок</option>
-      </select>
-      <label>Комментарий</label><input id="h-title" placeholder="Например: яма на въезде">
-      <label>Стоимость проезда, ₽ (для платных)</label><input id="h-price" type="number" inputmode="numeric">
-      <button id="btn-add-hazard" class="big" style="margin-top:12px" disabled>Сначала нажмите на карту</button>
-      <p id="h-msg" class="muted"></p>
-    </div>
-    <div id="map-h" style="height:340px;border-radius:16px;margin-bottom:12px"></div>
-    <div class="card"><h2>Все отметки</h2><div id="hazards-list"></div></div>
+    <h1 class="title">Дороги</h1>
+    <button id="btn-report" class="btn danger big" style="margin-bottom:12px"><span data-i="alert"></span>Отметить проблему здесь</button>
+    <div id="map-h"></div>
+    <details class="card">
+      <summary>Добавить отметку на карте</summary>
+      <p class="hint" style="margin-top:0">Нажмите на карту в нужном месте, затем заполните поля.</p>
+      <div class="field"><label for="h-type">Что это</label>
+        <select id="h-type"><option value="bad_road">Плохая дорога (маршрут будет объезжать)</option><option value="weigh_post">Весовой контроль</option><option value="toll">Платный участок</option></select></div>
+      <div class="field"><label for="h-title">Комментарий</label><input id="h-title" placeholder="Например: яма на въезде в посёлок"></div>
+      <div class="field"><label for="h-price">Стоимость проезда, ₽ (для платных)</label><input id="h-price" type="number" inputmode="numeric"></div>
+      <button id="btn-add-hazard" class="btn sign" disabled>Сначала нажмите на карту</button>
+      <p id="h-msg" class="msg"></p>
+    </details>
+    <div class="section-head"><h2>Все отметки</h2></div>
+    <div id="hazards-list" class="list"></div>
   </section>
 </main>
+
+<!-- ПАНЕЛЬ ДЕЙСТВИЯ -->
+<div id="cta" class="cta hidden">
+  <div class="cta-info"><b id="cta-title"></b><span id="cta-sub"></span></div>
+  <button id="btn-secondary" class="btn ghost icon hidden" aria-label="Сохранить рейс" data-i="save"></button>
+  <button id="btn-main" class="btn primary"><span id="btn-main-icon" data-i="route"></span><span id="btn-main-label">Построить маршрут</span></button>
+</div>
+
+<nav id="nav" class="hidden">
+  <button data-v="plan" class="active"><span data-i="route"></span>Маршрут</button>
+  <button data-v="trips"><span data-i="clipboard"></span>Рейсы</button>
+  <button data-v="clients"><span data-i="users"></span>Клиенты</button>
+  <button data-v="hazards"><span data-i="alert"></span>Дороги</button>
+</nav>
+
+<!-- ШТОРКА: КЛИЕНТ -->
+<div id="backdrop" class="backdrop"></div>
+<div id="sheet-client" class="sheet" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h3 id="c-title">Новый клиент</h3>
+  <div class="field"><label for="c-name">Название</label><input id="c-name" placeholder="ООО «Ромашка» или ИП Иванов"></div>
+  <div class="row-2">
+    <div class="field"><label>Форма</label>
+      <div class="seg" id="c-kind-seg"><button type="button" data-kind="ООО" class="on">ООО</button><button type="button" data-kind="ИП">ИП</button></div>
+      <input id="c-kind" type="hidden" value="ООО"></div>
+    <div class="field"><label for="c-unload">Разгрузка, мин</label><input id="c-unload" type="number" inputmode="numeric" value="15"></div>
+  </div>
+  <div class="field"><label for="c-addr">Адрес, с городом или посёлком</label><input id="c-addr" placeholder="Уфа, ул. Ленина, 1"></div>
+  <div class="btn-row"><button id="btn-find" class="btn sign">Найти адрес</button><button id="btn-pick-new" class="btn ghost">На карте</button></div>
+  <select id="c-candidates" class="hidden" style="margin-top:10px"></select>
+  <div id="c-coords" class="hint"></div>
+  <div class="row-2" style="margin-top:12px">
+    <div class="field"><label for="c-from">Принимает с</label><input id="c-from" type="time"></div>
+    <div class="field"><label for="c-to">Принимает до</label><input id="c-to" type="time"></div>
+  </div>
+  <div class="field"><label for="c-phone">Телефон</label><input id="c-phone" type="tel" inputmode="tel" placeholder="+7 900 000-00-00"></div>
+  <p id="c-msg" class="msg"></p>
+  <div class="btn-row"><button id="btn-cancel-edit" class="btn ghost">Закрыть</button><button id="btn-add-client" class="btn primary">Добавить</button></div>
+</div>
+
+<!-- ШТОРКА: ПРОБЛЕМА НА ДОРОГЕ -->
+<div id="sheet-report" class="sheet" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h3>Что на дороге?</h3>
+  <div class="tiles-3">
+    <button class="tile-btn" data-type="bad_road"><span data-i="road"></span>Яма, разбито</button>
+    <button class="tile-btn" data-type="weigh_post"><span data-i="scale"></span>Весовой</button>
+    <button class="tile-btn" data-type="toll"><span data-i="banknote"></span>Платный участок</button>
+  </div>
+  <p id="report-msg" class="hint" style="text-align:center">Отметка встанет на место, где вы сейчас находитесь.</p>
+  <button id="btn-report-close" class="btn ghost">Отмена</button>
+</div>
+
+<!-- УВЕДОМЛЕНИЕ -->
+<div id="toast" class="toast" role="status" aria-live="polite"><span id="toast-text" class="grow"></span><button id="toast-undo" class="hidden">Отменить</button></div>
 
 <!-- ВЫБОР ТОЧКИ НА КАРТЕ -->
 <div id="pick" class="hidden">
   <div id="pick-map"></div>
-  <div class="bar">
-    <div id="pick-hint" class="muted">Нажмите на карту, где находится точка</div>
-    <button id="pick-gps" class="ghost">📍 Я здесь</button>
-    <div class="row"><button id="pick-cancel" class="ghost">Отмена</button><button id="pick-ok" disabled>Готово</button></div>
+  <div class="bar-b">
+    <div id="pick-hint" class="hint" style="margin:0">Нажмите на карту, где находится точка</div>
+    <button id="pick-gps" class="btn ghost"><span data-i="locate"></span>Я здесь</button>
+    <div class="btn-row"><button id="pick-cancel" class="btn ghost">Отмена</button><button id="pick-ok" class="btn primary" disabled>Готово</button></div>
   </div>
 </div>
 
-<nav id="nav" class="hidden">
-  <button data-v="plan" class="active"><span>🚚</span>Маршрут</button>
-  <button data-v="trips"><span>🗂️</span>Рейсы</button>
-  <button data-v="clients"><span>👥</span>Клиенты</button>
-  <button data-v="hazards"><span>⚠️</span>Дороги</button>
-</nav>
+<!-- РЕЖИМ «ЕДУ» -->
+<div id="drive" class="drive hidden">
+  <div class="drive-top">
+    <button id="drive-close" class="icon-btn" aria-label="Свернуть рейс" data-i="x"></button>
+    <div class="segs" id="drive-segs"></div>
+    <div class="drive-count" id="drive-count"></div>
+  </div>
+  <div id="drive-body" class="signpanel"></div>
+  <div id="drive-actions"></div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
